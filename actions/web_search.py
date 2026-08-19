@@ -5,6 +5,7 @@ from pathlib import Path
 
 from actions.news_reader import build_news_brief, read_url
 from actions.google_workspace import google_workspace
+from actions.phone_agent import phone_action
 
 
 def _get_base_dir() -> Path:
@@ -299,6 +300,8 @@ def web_search(
     try:
         if mode in ("gmail", "calendar", "contacts", "google"):
             return google_workspace(mode, query, player=player)
+        if mode in ("call", "phone"):
+            return phone_action(query, player=player)
         if mode == "compare" and items:
             return _compare(items, aspect)
         if mode == "news":
