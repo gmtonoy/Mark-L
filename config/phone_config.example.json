@@ -1,0 +1,10 @@
+{
+  "twilio_account_sid": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "twilio_auth_token": "replace-with-local-secret",
+  "twilio_phone_number": "+1XXXXXXXXXX",
+  "public_base_url": "https://your-public-tunnel-or-domain.example",
+  "local_port": 8765,
+  "caller_name": "Tonoy",
+  "default_country_code": "+1",
+  "validate_twilio_signature": true
+}
