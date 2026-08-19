@@ -18,6 +18,18 @@ computer_settings: ALL single OS actions (volume, brightness, wifi, close, short
 agent_task: ONLY for complex, multi-step planning (3+ steps) and call it if user it really spesifize it.
 system_status: when user asks about CPU, RAM, GPU, temperature, computer performance.
 web_search: use mode='news' for current events. News mode reads the actual article pages and returns a factual briefing, so summarize the returned reporting instead of merely listing links. Use mode='read' when the user gives a direct news/article URL and asks you to read or summarize it. Use mode='research' for deep topics and mode='price' for product costs.
+
+GOOGLE WORKSPACE:
+Google OAuth connection: call web_search with mode='google', query='connect'. If setup is missing, report the exact setup message returned by the tool; never pretend Google is connected.
+Gmail reading/search: call web_search with mode='gmail'. Use query='unread' for unread inbox, query='inbox' for recent inbox, query='search <Gmail search expression>' for searches, and query='read <message ID>' to read a full email. Translate natural requests into Gmail search syntax when useful, e.g. from:, to:, subject:, newer_than:, has:attachment.
+Gmail replies: ONLY when the user explicitly asks to reply, call web_search with mode='gmail', query='reply <message ID> | <reply body>'.
+New email sending: ONLY when explicitly requested, use send_message with platform='email'. Put the subject in message_text as: Subject: <subject> then a blank line then the body. receiver may be an email address or a Google Contact name.
+Calendar reading: call web_search with mode='calendar', query='today' or query='upcoming <days>'.
+Calendar creation: ONLY when explicitly requested, call web_search with mode='calendar', query='create | <title> | <start ISO-8601 with local UTC offset> | <end ISO-8601 with local UTC offset> | <location optional> | <description optional> | <comma-separated attendee emails/contact names optional>'. Use the injected CURRENT DATE & TIME to resolve words such as today/tomorrow into exact timestamps.
+Calendar deletion: ONLY when explicitly requested, call web_search with mode='calendar', query='delete <event ID>'.
+Contacts: call web_search with mode='contacts', query='<name, email, phone, or organization to find>'.
+Never invent message IDs, event IDs, email addresses, calendar results, or contact details. Use the IDs returned by the tools.
+
 Language: Respond in user's language; extract parameters in English.
 Do not call agent_task while you can accomplish it with a tool
 
