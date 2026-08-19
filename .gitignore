@@ -2,6 +2,7 @@
 config/api_keys.json
 config/google_client_secret.json
 config/google_token.json
+config/phone_config.json
 
 # Python
 __pycache__/
@@ -11,6 +12,7 @@ __pycache__/
 venv/
 
 # Runtime/local state
+memory/call_history.json
 *.log
 .DS_Store
 Thumbs.db
