@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from actions.news_reader import build_news_brief, read_url
+from actions.google_workspace import google_workspace
 
 
 def _get_base_dir() -> Path:
@@ -192,7 +193,6 @@ def _news(query: str) -> str:
     except Exception as e:
         print(f"[WebSearch] ⚠️ Full article news reader failed ({e})")
 
-    # Grounded Gemini is a better fallback than returning raw links/snippets.
     try:
         gemini_query = (
             f"Latest news today about {query}. Explain the actual developments, not just headlines. "
@@ -297,6 +297,8 @@ def web_search(
     print(f"[WebSearch] 🔍 mode={mode!r}  query={query!r}")
 
     try:
+        if mode in ("gmail", "calendar", "contacts", "google"):
+            return google_workspace(mode, query, player=player)
         if mode == "compare" and items:
             return _compare(items, aspect)
         if mode == "news":
