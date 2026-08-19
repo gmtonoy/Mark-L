@@ -1,7 +1,10 @@
-#web_search.py
+# web_search.py
 import json
 import sys
 from pathlib import Path
+
+from actions.news_reader import build_news_brief, read_url
+
 
 def _get_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -9,7 +12,7 @@ def _get_base_dir() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-BASE_DIR        = _get_base_dir()
+BASE_DIR = _get_base_dir()
 API_CONFIG_PATH = BASE_DIR / "config" / "api_keys.json"
 
 
@@ -21,7 +24,7 @@ def _get_api_key() -> str:
 def _gemini_search(query: str) -> str:
     from google import genai
 
-    client   = genai.Client(api_key=_get_api_key())
+    client = genai.Client(api_key=_get_api_key())
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=query,
@@ -48,16 +51,18 @@ def _ddg_search(query: str, max_results: int = 6) -> list[dict]:
     results = []
     with DDGS() as ddgs:
         for r in ddgs.text(query, max_results=max_results):
-            results.append({
-                "title":   r.get("title",  ""),
-                "snippet": r.get("body",   ""),
-                "url":     r.get("href",   ""),
-            })
+            results.append(
+                {
+                    "title": r.get("title", ""),
+                    "snippet": r.get("body", ""),
+                    "url": r.get("href", ""),
+                }
+            )
     return results
 
 
 def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
-    """DDG news search — returns actual articles, not website homepages."""
+    """DDG news search — returns direct article URLs where available."""
     try:
         from ddgs import DDGS
     except ImportError:
@@ -67,12 +72,14 @@ def _ddg_news(query: str, max_results: int = 8) -> list[dict]:
     try:
         with DDGS() as ddgs:
             for r in ddgs.news(query, max_results=max_results):
-                results.append({
-                    "title":   r.get("title",  ""),
-                    "snippet": r.get("body",   ""),
-                    "url":     r.get("url",    ""),
-                    "source":  r.get("source", ""),
-                })
+                results.append(
+                    {
+                        "title": r.get("title", ""),
+                        "snippet": r.get("body", ""),
+                        "url": r.get("url", ""),
+                        "source": r.get("source", ""),
+                    }
+                )
     except Exception as e:
         print(f"[WebSearch] ⚠️ DDG news() failed ({e}) — falling back to text search")
         results = _ddg_search(query, max_results=max_results)
@@ -85,14 +92,18 @@ def _format_ddg(query: str, results: list[dict]) -> str:
 
     lines = [f"Search results for: {query}\n"]
     for i, r in enumerate(results, 1):
-        if r.get("title"):   lines.append(f"{i}. {r['title']}")
-        if r.get("snippet"): lines.append(f"   {r['snippet']}")
-        if r.get("url"):     lines.append(f"   Source: {r['url']}")
+        if r.get("title"):
+            lines.append(f"{i}. {r['title']}")
+        if r.get("snippet"):
+            lines.append(f"   {r['snippet']}")
+        if r.get("url"):
+            lines.append(f"   Source: {r['url']}")
         lines.append("")
     return "\n".join(lines).strip()
 
 
 def _format_news(query: str, results: list[dict]) -> str:
+    """Last-resort headline formatting when article pages cannot be fetched."""
     if not results:
         return f"No news found for: {query}"
 
@@ -104,7 +115,7 @@ def _format_news(query: str, results: list[dict]) -> str:
         src = f"  [{r['source']}]" if r.get("source") else ""
         lines.append(f"{i}. {title}{src}")
         if r.get("snippet"):
-            lines.append(f"   {r['snippet'][:140]}")
+            lines.append(f"   {r['snippet'][:240]}")
         if r.get("url"):
             lines.append(f"   {r['url']}")
         lines.append("")
@@ -116,7 +127,6 @@ def _format_news(query: str, results: list[dict]) -> str:
 def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
     """
     Fetches current headlines via Gemini grounded search.
-    Optimised for speed: minimal prompt + strict token cap.
     Returns (headline_list, raw_text_for_display).
     """
     import re
@@ -139,11 +149,10 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
         line = line.strip()
         if not line:
             continue
-        # Only accept lines that begin with a number — skips preamble/closing sentences
-        if not re.match(r'^[\d]+[.\)\-]', line):
+        if not re.match(r"^[\d]+[.\)\-]", line):
             continue
-        clean = re.sub(r'^[\d]+[.\)\-]\s*', '', line)
-        clean = re.sub(r'^\*+\s*',          '', clean).strip()
+        clean = re.sub(r"^[\d]+[.\)\-]\s*", "", line)
+        clean = re.sub(r"^\*+\s*", "", clean).strip()
         if clean and len(clean) > 10:
             headlines.append(clean)
 
@@ -153,7 +162,10 @@ def _gemini_headlines(n: int = 5) -> tuple[list[str], str]:
 # ── Modes ──────────────────────────────────────────────────────────────────────
 
 def _search(query: str) -> str:
-    """Default search — Gemini grounded, DDG fallback."""
+    """Default search — direct URLs are read, other queries use grounded search."""
+    if query.lower().startswith(("http://", "https://")):
+        return read_url(query)
+
     try:
         return _gemini_search(query)
     except Exception as e:
@@ -164,58 +176,50 @@ def _search(query: str) -> str:
 
 def _news(query: str) -> str:
     """
-    Runs Gemini grounded search AND DDG news in parallel.
-    Returns whichever delivers a valid result first; cancels the other.
+    Search current news, open the returned article pages, extract their actual text,
+    and return a concise multi-source briefing. Grounded search remains the fallback.
     """
-    import threading
+    ddg_query = query if query else "world news today"
 
-    gemini_query = f"latest news today: {query}" if query else "top world news today"
-    ddg_query    = query if query else "world news today"
+    try:
+        results = _ddg_news(ddg_query, max_results=8)
+        if results:
+            print(f"[WebSearch] 📰 Reading article pages for {ddg_query!r}")
+            brief = build_news_brief(results, topic=ddg_query)
+            if brief and len(brief) > 100:
+                return brief
+            print("[WebSearch] ⚠️ Article extraction produced no usable briefing")
+    except Exception as e:
+        print(f"[WebSearch] ⚠️ Full article news reader failed ({e})")
 
-    result_box  = [None]   # first valid result lands here
-    lock        = threading.Lock()
-    done_evt    = threading.Event()
-    failures    = [0]
-
-    def _store(r: str) -> None:
-        if r and len(r) > 60:
-            with lock:
-                if result_box[0] is None:
-                    result_box[0] = r
-            done_evt.set()
-        else:
-            with lock:
-                failures[0] += 1
-                if failures[0] >= 2:   # both failed — unblock caller
-                    done_evt.set()
-
-    def _try_gemini():
-        try:
-            _store(_gemini_search(gemini_query))
-        except Exception as e:
-            print(f"[WebSearch] ⚠️ Gemini news failed ({e})")
-            _store("")
-
-    def _try_ddg():
+    # Grounded Gemini is a better fallback than returning raw links/snippets.
+    try:
+        gemini_query = (
+            f"Latest news today about {query}. Explain the actual developments, not just headlines. "
+            "Give concise factual summaries and identify the sources used."
+            if query
+            else "Top world news today. Explain the actual developments, not just headlines. "
+                 "Give concise factual summaries and identify the sources used."
+        )
+        return _gemini_search(gemini_query)
+    except Exception as e:
+        print(f"[WebSearch] ⚠️ Gemini news fallback failed ({e})")
         try:
             results = _ddg_news(ddg_query, max_results=8)
-            _store(_format_news(ddg_query, results))
-        except Exception as e:
-            print(f"[WebSearch] ⚠️ DDG news failed ({e})")
-            _store("")
+            return _format_news(ddg_query, results)
+        except Exception:
+            return f"No news found for: {query}"
 
-    threading.Thread(target=_try_gemini, daemon=True).start()
-    threading.Thread(target=_try_ddg,    daemon=True).start()
 
-    done_evt.wait(timeout=10.0)
-    return result_box[0] or f"No news found for: {query}"
+def _read(query: str) -> str:
+    """Read and summarize a direct article URL."""
+    if not query.lower().startswith(("http://", "https://")):
+        return "Read mode requires a direct http or https article URL."
+    return read_url(query)
 
 
 def _research(query: str) -> str:
-    """
-    Deep dive — asks Gemini for a comprehensive answer with context.
-    Falls back to a wider DDG fetch.
-    """
+    """Deep dive — grounded answer with wider DDG fallback."""
     research_query = (
         f"Comprehensive, detailed explanation of: {query}. "
         "Include background context, key facts, current state, and important nuances."
@@ -270,15 +274,15 @@ def _compare(items: list[str], aspect: str) -> str:
 # ── Public entry point ─────────────────────────────────────────────────────────
 
 def web_search(
-    parameters:     dict,
+    parameters: dict,
     response=None,
     player=None,
     session_memory=None,
 ) -> str:
     params = parameters or {}
-    query  = params.get("query", "").strip()
-    mode   = params.get("mode",  "search").lower().strip()
-    items  = params.get("items", [])
+    query = params.get("query", "").strip()
+    mode = params.get("mode", "search").lower().strip()
+    items = params.get("items", [])
     aspect = params.get("aspect", "general").strip() or "general"
 
     if not query and not items:
@@ -297,6 +301,8 @@ def web_search(
             return _compare(items, aspect)
         if mode == "news":
             return _news(query)
+        if mode in ("read", "article"):
+            return _read(query)
         if mode == "research":
             return _research(query)
         if mode == "price":
