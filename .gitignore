@@ -1,0 +1,16 @@
+# Local secrets
+config/api_keys.json
+config/google_client_secret.json
+config/google_token.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# Runtime/local state
+*.log
+.DS_Store
+Thumbs.db
